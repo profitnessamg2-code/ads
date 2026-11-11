@@ -122,6 +122,7 @@ function render() {
       var nm = document.createElement('input');
       nm.className = 'nm'; nm.value = it.name; nm.placeholder = 'Подпись (кто говорит)';
       nm.title = 'Нажми и напиши свою подпись';
+      if (it.remote) { nm.readOnly = true; nm.title = 'Название файла на GitHub. Чтобы изменить, переименуй файл в репозитории'; }
       nm.onchange = function () { it.name = nm.value.trim() || it.name; nm.value = it.name; dbPut(it); };
       nm.onkeydown = function (e) { if (e.key === 'Enter') nm.blur(); };
       var pl = document.createElement('button');
@@ -136,7 +137,7 @@ function render() {
         items = items.filter(function (x) { return x.id !== it.id; });
         dbDel(it.id); render();
       };
-      li.append(nm, pl, dl);
+      if (it.remote) li.append(nm, pl); else li.append(nm, pl, dl);
       ul.appendChild(li);
     });
   });
@@ -144,7 +145,7 @@ function render() {
 
 function play(it) {
   stop();
-  audio.src = URL.createObjectURL(it.blob);
+  audio.src = it.url ? it.url : URL.createObjectURL(it.blob);
   audio.play().catch(function () {});
   playingId = it.id;
   document.getElementById('status').textContent = 'Играет: ' + it.name;
@@ -233,7 +234,31 @@ goBtn.onclick = function () {
   }
 };
 
-openDb().then(function (d) { db = d; return dbAll(); }).then(function (all) { items = all; render(); });
+// ---- Аудио из репозитория GitHub (папки audio/ads и audio/trainers) ----
+async function loadRemote() {
+  var h = location.hostname;
+  if (!/\.github\.io$/.test(h)) return;
+  var seg = location.pathname.split('/')[1] || '';
+  var owner = h.split('.')[0], repo = seg || (owner + '.github.io');
+  var base = location.origin + (seg ? '/' + seg : '');
+  var kinds = ['ads', 'trainers'];
+  for (var k = 0; k < kinds.length; k++) {
+    var kind = kinds[k], list = null, ck = 'remote-' + kind;
+    try {
+      var res = await fetch('https://api.github.com/repos/' + owner + '/' + repo + '/contents/audio/' + kind);
+      if (res.ok) {
+        list = (await res.json()).map(function (f) { return f.name; });
+        try { localStorage.setItem(ck, JSON.stringify(list)); } catch (e) {}
+      }
+    } catch (e) {}
+    if (!list) { try { list = JSON.parse(localStorage.getItem(ck) || 'null'); } catch (e) {} }
+    (list || []).filter(function (n) { return /\.(mp3|wav|ogg|m4a|aac)$/i.test(n); }).forEach(function (n) {
+      items.push({ id: 'r:' + kind + ':' + n, kind: kind, name: n.replace(/\.[^.]+$/, ''), url: base + '/audio/' + kind + '/' + encodeURIComponent(n), remote: true });
+    });
+  }
+}
+
+openDb().then(function (d) { db = d; return dbAll(); }).then(function (all) { items = all; render(); return loadRemote(); }).then(function () { render(); });
 </script>
 </body>
 </html>

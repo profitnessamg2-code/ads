@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Аудио-реклама</title>
+<style>
+:root{--bg:#f6f6f4;--card:#fff;--tx:#1b1b1b;--mut:#777;--ac:#2563eb;--bd:#ddd;--dg:#c0392b;--ok:#16a34a;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#151515;--card:#222;--tx:#eee;--mut:#999;--ac:#5b8dff;--bd:#3a3a3a;--dg:#ff6b5b;--ok:#4ade80;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#151515;--card:#222;--tx:#eee;--mut:#999;--ac:#5b8dff;--bd:#3a3a3a;--dg:#ff6b5b;--ok:#4ade80;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:16px}
+h1{font-size:20px;margin:0 0 12px}
+.now{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 14px;margin-bottom:16px;display:flex;gap:10px;align-items:center;justify-content:space-between}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:700px){.cols{grid-template-columns:1fr}}
+.col{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px}
+.col h2{font-size:17px;margin:0 0 4px}
+.hint{color:var(--mut);font-size:13px;margin:0 0 10px}
+.drop{border:2px dashed var(--bd);border-radius:10px;padding:16px;text-align:center;color:var(--mut);cursor:pointer;margin-bottom:10px}
+.drop.over{border-color:var(--ac);color:var(--ac)}
+ul{list-style:none;margin:0;padding:0;max-height:60vh;overflow-y:auto}
+li{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--bd)}
+li .nm{flex:1;overflow-wrap:anywhere}
+li.on .nm{color:var(--ok);font-weight:600}
+button{font:inherit;border:1px solid var(--bd);background:transparent;color:var(--tx);border-radius:8px;padding:6px 10px;cursor:pointer}
+button.main{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600;padding:8px 14px}
+button.del{color:var(--dg)}
+.empty{color:var(--mut);padding:8px 0}
+.timer{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:16px}
+.timer .row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.timer .row:last-child{margin-bottom:0}
+.timer label{min-width:130px}
+.timer input[type=range]{flex:1;accent-color:var(--ac)}
+.timer .hint{margin:0}
+</style>
+</head>
+<body>
+<h1>Аудио-реклама</h1>
+<div class="now"><span id="status">Ничего не играет</span><button id="stop" hidden>Стоп</button></div>
+
+<div class="timer">
+  <div class="row"><label>Интервал от <b id="minV">4</b> мин</label><input type="range" id="minR" min="1" max="30" step="1" value="4"></div>
+  <div class="row"><label>до <b id="maxV">8</b> мин</label><input type="range" id="maxR" min="1" max="30" step="1" value="8"></div>
+  <div class="row"><button class="main" id="go">Старт</button><span class="hint" id="next">Каждый раз пауза выбирается случайно между «от» и «до»</span></div>
+</div>
+
+<div class="cols">
+  <section class="col" data-kind="ads">
+    <h2>Реклама</h2>
+    <p class="hint">Будет играть сама по таймеру (добавим следующим шагом)</p>
+    <div class="drop">Перетащи аудио сюда или нажми, чтобы выбрать</div>
+    <input type="file" accept="audio/*" multiple hidden>
+    <ul></ul>
+  </section>
+  <section class="col" data-kind="trainers">
+    <h2>Тренеры</h2>
+    <p class="hint">«Тренер …, подойдите на ресепшен». Включает админ вручную</p>
+    <div class="drop">Перетащи аудио сюда или нажми, чтобы выбрать</div>
+    <input type="file" accept="audio/*" multiple hidden>
+    <ul></ul>
+  </section>
+</div>
+
+<script>
+var items = [];            // {id, kind, name, blob}
+var db = null;
+var audio = new Audio();
+var playingId = null;
+
+function openDb() {
+  return new Promise(function (resolve) {
+    try {
+      var req = indexedDB.open('audio-ads', 1);
+      req.onupgradeneeded = function () {
+        req.result.createObjectStore('files', { keyPath: 'id', autoIncrement: true });
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { resolve(null); };
+    } catch (e) { resolve(null); }
+  });
+}
+function dbAll() {
+  return new Promise(function (resolve) {
+    if (!db) return resolve([]);
+    try {
+      var r = db.transaction('files').objectStore('files').getAll();
+      r.onsuccess = function () { resolve(r.result || []); };
+      r.onerror = function () { resolve([]); };
+    } catch (e) { resolve([]); }
+  });
+}
+function dbAdd(rec) {
+  return new Promise(function (resolve) {
+    if (!db) { rec.id = Date.now() + Math.random(); return resolve(rec); }
+    try {
+      var r = db.transaction('files', 'readwrite').objectStore('files').add(rec);
+      r.onsuccess = function () { rec.id = r.result; resolve(rec); };
+      r.onerror = function () { rec.id = Date.now() + Math.random(); resolve(rec); };
+    } catch (e) { rec.id = Date.now() + Math.random(); resolve(rec); }
+  });
+}
+function dbDel(id) {
+  try { if (db) db.transaction('files', 'readwrite').objectStore('files').delete(id); } catch (e) {}
+}
+
+function render() {
+  document.querySelectorAll('.col').forEach(function (col) {
+    var kind = col.dataset.kind, ul = col.querySelector('ul');
+    ul.innerHTML = '';
+    var list = items.filter(function (i) { return i.kind === kind; });
+    if (!list.length) { ul.innerHTML = '<li class="empty">Пока пусто</li>'; return; }
+    list.forEach(function (it) {
+      var li = document.createElement('li');
+      if (it.id === playingId) li.className = 'on';
+      var nm = document.createElement('span');
+      nm.className = 'nm'; nm.textContent = it.name;
+      var pl = document.createElement('button');
+      pl.textContent = kind === 'trainers' ? 'Включить' : '▶';
+      if (kind === 'trainers') pl.className = 'main';
+      pl.onclick = function () { play(it); };
+      var dl = document.createElement('button');
+      dl.className = 'del'; dl.textContent = '✕'; dl.title = 'Удалить';
+      dl.onclick = function () {
+        if (!confirm('Удалить «' + it.name + '»?')) return;
+        if (playingId === it.id) stop();
+        items = items.filter(function (x) { return x.id !== it.id; });
+        dbDel(it.id); render();
+      };
+      li.append(nm, pl, dl);
+      ul.appendChild(li);
+    });
+  });
+}
+
+function play(it) {
+  stop();
+  audio.src = URL.createObjectURL(it.blob);
+  audio.play().catch(function () {});
+  playingId = it.id;
+  document.getElementById('status').textContent = 'Играет: ' + it.name;
+  document.getElementById('stop').hidden = false;
+  render();
+}
+function stop() {
+  audio.pause();
+  playingId = null;
+  document.getElementById('status').textContent = 'Ничего не играет';
+  document.getElementById('stop').hidden = true;
+  render();
+}
+audio.onended = stop;
+document.getElementById('stop').onclick = stop;
+
+async function addFiles(kind, files) {
+  for (var f of files) {
+    if (!f.type.startsWith('audio/')) continue;
+    var rec = await dbAdd({ kind: kind, name: f.name.replace(/\.[^.]+$/, ''), blob: f });
+    items.push(rec);
+  }
+  render();
+}
+
+document.querySelectorAll('.col').forEach(function (col) {
+  var kind = col.dataset.kind, drop = col.querySelector('.drop'), inp = col.querySelector('input');
+  drop.onclick = function () { inp.click(); };
+  inp.onchange = function () { addFiles(kind, inp.files); inp.value = ''; };
+  drop.ondragover = function (e) { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = function () { drop.classList.remove('over'); };
+  drop.ondrop = function (e) { e.preventDefault(); drop.classList.remove('over'); addFiles(kind, e.dataTransfer.files); };
+});
+
+// ---- Таймер рекламы ----
+var minR = document.getElementById('minR'), maxR = document.getElementById('maxR');
+var minV = document.getElementById('minV'), maxV = document.getElementById('maxV');
+var goBtn = document.getElementById('go'), nextEl = document.getElementById('next');
+var tmr = { on: false, at: 0, last: null };
+var HINT = 'Каждый раз пауза выбирается случайно между «от» и «до»';
+
+try {
+  var saved = JSON.parse(localStorage.getItem('ad-range') || 'null');
+  if (saved) { minR.value = saved[0]; maxR.value = saved[1]; }
+} catch (e) {}
+
+function syncRange(changed) {
+  var a = +minR.value, b = +maxR.value;
+  if (a > b) { if (changed === 'min') maxR.value = a; else minR.value = b; }
+  minV.textContent = minR.value; maxV.textContent = maxR.value;
+  try { localStorage.setItem('ad-range', JSON.stringify([+minR.value, +maxR.value])); } catch (e) {}
+}
+minR.oninput = function () { syncRange('min'); };
+maxR.oninput = function () { syncRange('max'); };
+syncRange();
+
+function rnd() { var a = +minR.value, b = +maxR.value; return (a + Math.random() * (b - a)) * 60000; }
+function fmt(ms) { var s = Math.ceil(ms / 1000), m = Math.floor(s / 60); s = s % 60; return m + ':' + (s < 10 ? '0' : '') + s; }
+
+function fire() {
+  if (playingId !== null) { tmr.at = Date.now() + 10000; return; }
+  var ads = items.filter(function (i) { return i.kind === 'ads'; });
+  if (!ads.length) { tmr.at = Date.now() + rnd(); return; }
+  var pool = ads.length > 1 ? ads.filter(function (x) { return x.id !== tmr.last; }) : ads;
+  var it = pool[Math.floor(Math.random() * pool.length)];
+  tmr.last = it.id;
+  play(it);
+  tmr.at = Date.now() + rnd();
+}
+setInterval(function () {
+  if (!tmr.on) return;
+  var left = tmr.at - Date.now();
+  if (left <= 0) { fire(); return; }
+  nextEl.textContent = 'Следующая реклама через ' + fmt(left);
+}, 1000);
+
+goBtn.onclick = function () {
+  tmr.on = !tmr.on;
+  if (tmr.on) {
+    tmr.at = Date.now() + rnd();
+    goBtn.textContent = 'Остановить';
+    nextEl.textContent = 'Следующая реклама через ' + fmt(tmr.at - Date.now());
+  } else {
+    goBtn.textContent = 'Старт';
+    nextEl.textContent = HINT;
+  }
+};
+
+openDb().then(function (d) { db = d; return dbAll(); }).then(function (all) { items = all; render(); });
+</script>
+</body>
+</html>

@@ -22,6 +22,9 @@ h1{font-size:20px;margin:0 0 12px}
 ul{list-style:none;margin:0;padding:0;max-height:60vh;overflow-y:auto}
 li{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--bd)}
 li .nm{flex:1;overflow-wrap:anywhere}
+li input.nm{min-width:0;font:inherit;color:var(--tx);background:transparent;border:1px solid transparent;border-radius:6px;padding:4px 6px}
+li input.nm:hover{border-color:var(--bd)}
+li input.nm:focus{border-color:var(--ac);outline:none;background:var(--bg)}
 li.on .nm{color:var(--ok);font-weight:600}
 button{font:inherit;border:1px solid var(--bd);background:transparent;color:var(--tx);border-radius:8px;padding:6px 10px;cursor:pointer}
 button.main{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600;padding:8px 14px}
@@ -100,6 +103,9 @@ function dbAdd(rec) {
     } catch (e) { rec.id = Date.now() + Math.random(); resolve(rec); }
   });
 }
+function dbPut(rec) {
+  try { if (db) db.transaction('files', 'readwrite').objectStore('files').put(rec); } catch (e) {}
+}
 function dbDel(id) {
   try { if (db) db.transaction('files', 'readwrite').objectStore('files').delete(id); } catch (e) {}
 }
@@ -113,8 +119,11 @@ function render() {
     list.forEach(function (it) {
       var li = document.createElement('li');
       if (it.id === playingId) li.className = 'on';
-      var nm = document.createElement('span');
-      nm.className = 'nm'; nm.textContent = it.name;
+      var nm = document.createElement('input');
+      nm.className = 'nm'; nm.value = it.name; nm.placeholder = 'Подпись (кто говорит)';
+      nm.title = 'Нажми и напиши свою подпись';
+      nm.onchange = function () { it.name = nm.value.trim() || it.name; nm.value = it.name; dbPut(it); };
+      nm.onkeydown = function (e) { if (e.key === 'Enter') nm.blur(); };
       var pl = document.createElement('button');
       pl.textContent = kind === 'trainers' ? 'Включить' : '▶';
       if (kind === 'trainers') pl.className = 'main';

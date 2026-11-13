@@ -72,10 +72,14 @@ button.del{color:var(--dg)}
 
 <script>
 // ---- Дополнительные графы: ручной запуск + необязательный автоповтор ----
-var EXTRA = [['club', 'Клубные'], ['1fit', '1Fit'], ['push30', 'Push30'], ['timeup', 'Time Up']];
+var EXTRA = [['club', 'Клубные'], ['1fit', '1Fit'], ['push30', 'Push30'], ['timeup', 'Time Up'], ['close_week', 'Будние дни', 'close'], ['close_off', 'Выходные и праздники', 'close']];
 (function () {
   var box = document.createElement('div');
   box.className = 'cols'; box.style.marginTop = '16px';
+  var cbox = document.createElement('div');
+  cbox.className = 'cols'; cbox.style.marginTop = '8px';
+  var head = document.createElement('h2');
+  head.textContent = 'Зал закрывается'; head.style.margin = '20px 0 0'; head.style.fontSize = '18px';
   EXTRA.forEach(function (e) {
     var s = document.createElement('section');
     s.className = 'col'; s.dataset.kind = e[0];
@@ -85,9 +89,10 @@ var EXTRA = [['club', 'Клубные'], ['1fit', '1Fit'], ['push30', 'Push30'],
       '<div class="arow"><button class="ab">Старт авто</button><span class="hint an"></span></div></div>' +
       '<div class="drop">Перетащи аудио сюда или нажми, чтобы выбрать</div>' +
       '<input type="file" accept="audio/*" multiple hidden><ul></ul>';
-    box.appendChild(s);
+    (e[2] === 'close' ? cbox : box).appendChild(s);
   });
   document.querySelector('.cols').after(box);
+  box.after(head); head.after(cbox);
 })();
 var items = [];            // {id, kind, name, blob}
 var db = null;
@@ -295,7 +300,7 @@ async function loadRemote() {
   var seg = location.pathname.split('/')[1] || '';
   var owner = h.split('.')[0], repo = seg || (owner + '.github.io');
   var base = location.origin + (seg ? '/' + seg : '');
-  var kinds = ['ads', 'trainers', 'club', '1fit', 'push30', 'timeup'];
+  var kinds = ['ads', 'trainers', 'club', '1fit', 'push30', 'timeup', 'close_week', 'close_off'];
   for (var k = 0; k < kinds.length; k++) {
     var kind = kinds[k], list = null, ck = 'remote-' + kind;
     try {

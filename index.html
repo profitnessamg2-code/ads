@@ -50,6 +50,7 @@ button.del{color:var(--dg)}
 <div class="timer">
   <div class="row"><label>Интервал от <b id="minV">4</b> мин</label><input type="range" id="minR" min="1" max="30" step="1" value="4"></div>
   <div class="row"><label>до <b id="maxV">8</b> мин</label><input type="range" id="maxR" min="1" max="30" step="1" value="8"></div>
+  <div class="row"><label>Громкость <b id="volV">100</b>%</label><input type="range" id="volR" min="100" max="400" step="10" value="100"></div>
   <div class="row"><button class="main" id="go">Старт</button><span class="hint" id="next">Каждый раз пауза выбирается случайно между «от» и «до»</span></div>
 </div>
 
@@ -97,6 +98,30 @@ var EXTRA = [['club', 'Клубные'], ['1fit', '1Fit'], ['push30', 'Push30'],
 var items = [];            // {id, kind, name, blob}
 var db = null;
 var audio = new Audio();
+var actx = null, gainNode = null;
+function applyVol() {
+  var v = +document.getElementById('volR').value / 100;
+  if (gainNode) gainNode.gain.value = v;
+}
+function setupAudio() {
+  if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    var src = actx.createMediaElementSource(audio);
+    gainNode = actx.createGain();
+    var comp = actx.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 12;
+    comp.attack.value = 0.003; comp.release.value = 0.15;
+    src.connect(gainNode); gainNode.connect(comp); comp.connect(actx.destination);
+    applyVol();
+  } catch (e) { actx = null; }
+}
+try { var vsaved = localStorage.getItem('ad-vol'); if (vsaved) { document.getElementById('volR').value = vsaved; document.getElementById('volV').textContent = vsaved; } } catch (e) {}
+document.getElementById('volR').oninput = function () {
+  document.getElementById('volV').textContent = this.value;
+  try { localStorage.setItem('ad-vol', this.value); } catch (e) {}
+  applyVol();
+};
 var playingId = null;
 
 function openDb() {
@@ -173,6 +198,7 @@ function render() {
 
 function play(it) {
   stop();
+  setupAudio();
   audio.src = it.url ? it.url : URL.createObjectURL(it.blob);
   audio.play().catch(function () {});
   playingId = it.id;

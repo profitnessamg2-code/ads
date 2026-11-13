@@ -24,6 +24,11 @@ li{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid va
 li .nm{flex:1;overflow-wrap:anywhere}
 li input.nm{min-width:0;font:inherit;color:var(--tx);background:transparent;border:1px solid transparent;border-radius:6px;padding:4px 6px}
 li input.nm:hover{border-color:var(--bd)}
+.auto{border:1px solid var(--bd);border-radius:10px;padding:10px;margin-bottom:10px}
+.auto label{display:block;margin-bottom:6px}
+.auto input[type=range]{width:100%;accent-color:var(--ac)}
+.arow{display:flex;gap:10px;align-items:center;margin-top:8px}
+.arow .hint{margin:0}
 li input.nm:focus{border-color:var(--ac);outline:none;background:var(--bg)}
 li.on .nm{color:var(--ok);font-weight:600}
 button{font:inherit;border:1px solid var(--bd);background:transparent;color:var(--tx);border-radius:8px;padding:6px 10px;cursor:pointer}
@@ -66,6 +71,24 @@ button.del{color:var(--dg)}
 </div>
 
 <script>
+// ---- Дополнительные графы: ручной запуск + необязательный автоповтор ----
+var EXTRA = [['club', 'Клубные'], ['1fit', '1Fit'], ['push30', 'Push30'], ['timeup', 'Time Up']];
+(function () {
+  var box = document.createElement('div');
+  box.className = 'cols'; box.style.marginTop = '16px';
+  EXTRA.forEach(function (e) {
+    var s = document.createElement('section');
+    s.className = 'col'; s.dataset.kind = e[0];
+    s.innerHTML = '<h2>' + e[1] + '</h2><p class="hint">Включает админ вручную, автоповтор по желанию</p>' +
+      '<div class="auto"><label>Авто: каждые <b class="av">10</b> мин</label>' +
+      '<input type="range" min="1" max="120" step="1" value="10">' +
+      '<div class="arow"><button class="ab">Старт авто</button><span class="hint an"></span></div></div>' +
+      '<div class="drop">Перетащи аудио сюда или нажми, чтобы выбрать</div>' +
+      '<input type="file" accept="audio/*" multiple hidden><ul></ul>';
+    box.appendChild(s);
+  });
+  document.querySelector('.cols').after(box);
+})();
 var items = [];            // {id, kind, name, blob}
 var db = null;
 var audio = new Audio();
@@ -126,8 +149,8 @@ function render() {
       nm.onchange = function () { it.name = nm.value.trim() || it.name; nm.value = it.name; dbPut(it); };
       nm.onkeydown = function (e) { if (e.key === 'Enter') nm.blur(); };
       var pl = document.createElement('button');
-      pl.textContent = kind === 'trainers' ? 'Включить' : '▶';
-      if (kind === 'trainers') pl.className = 'main';
+      pl.textContent = kind !== 'ads' ? 'Включить' : '▶';
+      if (kind !== 'ads') pl.className = 'main';
       pl.onclick = function () { play(it); };
       var dl = document.createElement('button');
       dl.className = 'del'; dl.textContent = '✕'; dl.title = 'Удалить';
@@ -234,14 +257,45 @@ goBtn.onclick = function () {
   }
 };
 
-// ---- Аудио из репозитория GitHub (папки audio/ads и audio/trainers) ----
+// ---- Автоповтор для дополнительных граф ----
+var autos = {};
+document.querySelectorAll('.col .auto').forEach(function (box) {
+  var kind = box.closest('.col').dataset.kind;
+  var r = box.querySelector('input'), v = box.querySelector('.av'), b = box.querySelector('.ab'), n = box.querySelector('.an');
+  var st = autos[kind] = { on: false, at: 0, last: null, n: n };
+  try { var sv = localStorage.getItem('auto-' + kind); if (sv) r.value = sv; } catch (e) {}
+  v.textContent = r.value;
+  r.oninput = function () { v.textContent = r.value; try { localStorage.setItem('auto-' + kind, r.value); } catch (e) {} };
+  st.period = function () { return +r.value * 60000; };
+  b.onclick = function () {
+    st.on = !st.on;
+    if (st.on) { st.at = Date.now() + st.period(); b.textContent = 'Стоп авто'; }
+    else { b.textContent = 'Старт авто'; n.textContent = ''; }
+  };
+});
+setInterval(function () {
+  Object.keys(autos).forEach(function (kind) {
+    var st = autos[kind];
+    if (!st.on) return;
+    var left = st.at - Date.now();
+    if (left > 0) { st.n.textContent = 'Через ' + fmt(left); return; }
+    if (playingId !== null) { st.at = Date.now() + 10000; return; }
+    var list = items.filter(function (i) { return i.kind === kind; });
+    if (!list.length) { st.at = Date.now() + st.period(); return; }
+    var pool = list.length > 1 ? list.filter(function (x) { return x.id !== st.last; }) : list;
+    var it = pool[Math.floor(Math.random() * pool.length)];
+    st.last = it.id; play(it); st.at = Date.now() + st.period();
+  });
+}, 1000);
+
+// ---- Аудио из репозитория GitHub (папки audio/ads, audio/trainers, audio/club, audio/1fit, audio/push30, audio/timeup) ----
 async function loadRemote() {
   var h = location.hostname;
   if (!/\.github\.io$/.test(h)) return;
   var seg = location.pathname.split('/')[1] || '';
   var owner = h.split('.')[0], repo = seg || (owner + '.github.io');
   var base = location.origin + (seg ? '/' + seg : '');
-  var kinds = ['ads', 'trainers'];
+  var kinds = ['ads', 'trainers', 'club', '1fit', 'push30', 'timeup'];
   for (var k = 0; k < kinds.length; k++) {
     var kind = kinds[k], list = null, ck = 'remote-' + kind;
     try {
